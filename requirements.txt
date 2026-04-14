@@ -1,0 +1,14 @@
+# Core app
+streamlit
+pandas
+numpy
+scikit-learn
+
+# Notebook + plots
+jupyter
+matplotlib
+seaborn
+
+# CV parsing
+python-docx
+pypdf
