@@ -1,6 +1,8 @@
 import ast
+import html
 import os
 import pickle
+from urllib.parse import quote_plus
 
 import pandas as pd
 import streamlit as st
@@ -12,18 +14,20 @@ from src.job_fit import analyze_job_fit
 from src.job_matcher import rank_jobs
 from src.resume_feedback import analyze_cv, calculate_cv_score
 from src.skills import extract_skills_from_text
+from src.theme_layout import apply_theme, render_header
 
-JOBS_PATH = "data/jobs_clean.csv"
-COURSES_PATH = "data/courses_clean.csv"
-VECTORIZER_PATH = "models/vectorizer.pkl"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+JOBS_PATH = os.path.join(BASE_DIR, "data", "jobs_clean.csv")
+COURSES_PATH = os.path.join(BASE_DIR, "data", "courses_clean.csv")
+VECTORIZER_PATH = os.path.join(BASE_DIR, "models", "vectorizer.pkl")
 
 st.set_page_config(
     page_title="AI Career Assistant",
     layout="wide"
     )
 
-st.title("AI Career Assistant")
-st.write("Upload a CV, match jobs, review ATS quality, and get learning recommendations.")
+apply_theme(st)
+render_header(st)
 
 @st.cache_resource
 def load_vectorizer():
@@ -83,42 +87,93 @@ def get_all_job_skills(job_skills_column):
     return sorted(all_skills)
 
 def show_job_results(results_df):
-    for row_index, row in results_df.iterrows():
-        st.subheader(row["job_title"])
+    for _, row in results_df.iterrows():
+        title = html.escape(str(row.get("job_title", "Untitled Role")))
+        company = html.escape(str(row.get("company_name", "N/A")))
+        location = html.escape(str(row.get("job_location", "N/A")))
 
-        col1, col2 = st.columns([4, 1])
+        matched_skills = row.get("matched_skills", [])
+        if not isinstance(matched_skills, list):
+            matched_skills = []
 
-        with col1:
-            st.write("**Company:**", row.get("company_name", "N/A"))
-            st.write("**Location:**", row.get("job_location", "N/A"))
+        missing_skills = row.get("missing_skills", [])
+        if not isinstance(missing_skills, list):
+            missing_skills = []
 
-            matched_skills = row.get("matched_skills", [])
-            missing_skills = row.get("missing_skills", [])
+        matched_html = "".join(
+            f'<span class="skill-chip">{html.escape(str(skill))}</span>'
+            for skill in matched_skills
+        ) or '<span class="empty-note">None</span>'
 
-            if matched_skills:
-                st.write("**Matched Skills:**", ", ".join(matched_skills))
-            else:
-                st.write("**Matched Skills:** None")
+        missing_html = "".join(
+            f'<span class="skill-chip missing">{html.escape(str(skill))}</span>'
+            for skill in missing_skills
+        ) or '<span class="empty-note">None</span>'
 
-            if missing_skills:
-                st.write("**Missing Skills for This Job:**", ", ".join(missing_skills))
-            else:
-                st.write("**Missing Skills for This Job:** None")
+        score = row.get("score", 0)
+        try:
+            score_value = f"{float(score):.3f}"
+        except (TypeError, ValueError):
+            score_value = "0.000"
 
-        with col2:
-            st.metric("Score", f"{row['score']:.3f}")
-
-        st.divider()
+        job_card_html = (
+            f'<div class="job-card">'
+            f'<div class="job-left">'
+            f'<p class="job-title">{title}</p>'
+            f'<div class="job-meta">{company} • {location}</div>'
+            f'<p class="job-skill-title">Matched Skills</p>'
+            f'<div class="skill-row">{matched_html}</div>'
+            f'<p class="job-skill-title">Missing Skills</p>'
+            f'<div class="skill-row">{missing_html}</div>'
+            f'</div>'
+            f'<div class="score-box">'
+            f'<div class="score-label">Score</div>'
+            f'<div class="score-value">{score_value}</div>'
+            f'</div>'
+            f'</div>'
+        )
+        st.markdown(job_card_html, unsafe_allow_html=True)
 
 def show_course_results(results_df):
-    for row_index, row in results_df.iterrows():
-        st.subheader(row.get("Title", "N/A"))
-        st.write("**Institution:**", row.get("Institution", "N/A"))
-        st.write("**Related Missing Skill:**", row.get("skill", "N/A"))
-        st.write("**Rating:**", row.get("Rate", "N/A"))
-        st.divider()
+    for _, row in results_df.iterrows():
+        title = html.escape(str(row.get("Title", "Untitled Course")))
+        institution = html.escape(str(row.get("Institution", "Unknown Institution")))
+        related_skill = html.escape(str(row.get("skill", "N/A")))
 
-CAREER_CLASSIFIER_PATH = "models/career_classifier.pkl"
+        raw_rating = row.get("Rate", "N/A")
+        rating_text = "N/A"
+        try:
+            rating_text = f"{float(raw_rating):.1f}"
+        except (TypeError, ValueError):
+            if str(raw_rating).strip():
+                rating_text = html.escape(str(raw_rating))
+
+        course_link = ""
+        for key in ["URL", "url", "course_url", "Course URL", "link"]:
+            value = row.get(key)
+            if isinstance(value, str) and value.strip().startswith(("http://", "https://")):
+                course_link = value.strip()
+                break
+
+        if not course_link:
+            course_link = f"https://www.google.com/search?q={quote_plus(str(row.get('Title', 'online course')))}"
+
+        course_link = html.escape(course_link)
+
+        st.markdown(
+            f'<div class="course-card">'
+            f'<p class="course-title">{title}</p>'
+            f'<div class="course-meta">{institution}</div>'
+            f'<div class="course-row"><span class="course-row-label">Related Skill:</span>'
+            f'<span class="skill-chip missing">{related_skill}</span></div>'
+            f'<div class="course-row"><span class="course-row-label">Rating:</span>'
+            f'<span class="rating-badge">★ {rating_text}</span></div>'
+            f'<div class="course-action"><a class="course-btn" href="{course_link}" target="_blank" rel="noopener noreferrer">View Course</a></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+CAREER_CLASSIFIER_PATH = os.path.join(BASE_DIR, "models", "career_classifier.pkl")
 
 
 @st.cache_resource
@@ -188,7 +243,7 @@ def analyze_uploaded_cv(uploaded_file, resources):
             user_text=cv_input,
             jobs_df=resources["jobs"],
             job_texts=resources["job_texts"],
-            vectorizer=resources["vectorizer"],
+             vectorizer=resources["vectorizer"],
             job_matrix=resources["job_matrix"],
             top_n=10,
         )
@@ -196,7 +251,7 @@ def analyze_uploaded_cv(uploaded_file, resources):
     (
         state["strengths"],
         state["issues"],
-        state["suggestions"],
+         state["suggestions"],
         state["missing_skills"],
     ) = analyze_cv(
         state["cv_text"],
@@ -247,12 +302,89 @@ def render_skill_tiles(skills, status="success", limit=None):
     if not visible_skills:
         return False
 
-    # Reuse the same compact grid pattern for skills across the app.
-    cols = st.columns(3)
-    for index, skill in enumerate(visible_skills):
-        getattr(cols[index % 3], status)(skill)
+    chip_class = "skill-chip"
+    if status in {"warning", "warn", "improve"}:
+        chip_class = "skill-chip warn"
+    elif status == "info":
+        chip_class = "skill-chip info"
+
+    chips = "".join(
+        f'<span class="{chip_class}">{html.escape(str(skill))}</span>'
+        for skill in visible_skills
+    )
+    st.markdown(
+        f'<div class="skills-chip-list">{chips}</div>',
+        unsafe_allow_html=True,
+    )
 
     return True
+
+
+def render_skill_section_card(title, skills, status="success", limit=None, empty_message="No skills found."):
+    visible_skills = skills[:limit] if limit is not None else skills
+
+    chip_class = "skill-chip"
+    if status in {"warning", "warn", "improve"}:
+        chip_class = "skill-chip improve"
+    elif status == "info":
+        chip_class = "skill-chip info"
+
+    if visible_skills:
+        chips = "".join(
+            f'<span class="{chip_class}">{html.escape(str(skill))}</span>'
+            for skill in visible_skills
+        )
+        body = f'<div class="skills-chip-list">{chips}</div>'
+    else:
+        body = f'<p class="empty-note">{html.escape(empty_message)}</p>'
+
+    st.markdown(
+        f'<section class="section-card"><p class="section-title">{html.escape(title)}</p>{body}</section>',
+        unsafe_allow_html=True,
+    )
+
+    return bool(visible_skills)
+
+
+def build_ats_item_list(items, item_type, icon):
+    if not items:
+        return '<p class="empty-note">No items to show.</p>'
+
+    return "".join(
+        f'<div class="ats-item {item_type}">{icon} {html.escape(str(item))}</div>'
+        for item in items
+    )
+
+
+def build_suggestion_list(items):
+    if not items:
+        return '<p class="empty-note">No suggestions right now. Your CV looks solid.</p>'
+
+    return "".join(
+        f'<div class="suggestion-item"><span class="suggestion-dot">Tip</span><span>{html.escape(str(item))}</span></div>'
+        for item in items
+    )
+
+
+def render_missing_skills_card(skills, title="Missing Skills", limit=12):
+    visible_skills = skills[:limit]
+
+    if visible_skills:
+        chips = "".join(
+            f'<span class="skill-chip missing{' missing-priority' if index < 3 else ''}">{html.escape(str(skill))}</span>'
+            for index, skill in enumerate(visible_skills)
+        )
+        body = f'<div class="skills-chip-list">{chips}</div>'
+    else:
+        body = '<p class="empty-note">No missing skills detected.</p>'
+
+    remaining = max(0, len(skills) - limit)
+    more = f'<p class="missing-more">+ {remaining} more skills</p>' if remaining else ''
+
+    st.markdown(
+        f'<section class="section-card"><p class="section-title">{html.escape(title)}</p>{body}{more}</section>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_pipeline_tab(uploaded_file, state):
@@ -265,22 +397,35 @@ def render_pipeline_tab(uploaded_file, state):
     with st.expander("Show CV text"):
         st.write(state["cv_text"])
 
-    st.header("Extracted Skills")
-    if not render_skill_tiles(sorted(state["extracted_skills"])):
-        st.warning("No skills found in the uploaded CV.")
+    render_skill_section_card(
+        title="Extracted Skills",
+        skills=sorted(state["extracted_skills"]),
+        status="success",
+        empty_message="No skills found in the uploaded CV.",
+    )
 
-    st.header("Skill Gap Summary")
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+
+    st.markdown('<p class="section-title" style="color:var(--navy);font-weight:700;font-size:1rem;margin-bottom:0.6rem">Skill Gap Summary</p>', unsafe_allow_html=True)
     left_col, right_col = st.columns(2)
 
     with left_col:
-        st.subheader("Your Strong Skills")
-        if not render_skill_tiles(sorted(state["extracted_skills"][:10])):
-            st.write("No skills detected.")
+        render_skill_section_card(
+            title="Your Strong Skills",
+            skills=sorted(state["extracted_skills"]),
+            status="success",
+            limit=10,
+            empty_message="No skills detected.",
+        )
 
     with right_col:
-        st.subheader("Skills to Improve")
-        if not render_skill_tiles(state["missing_skills"], status="warning", limit=10):
-            st.success("No missing skills detected.")
+        render_skill_section_card(
+            title="Skills to Improve",
+            skills=state["missing_skills"],
+            status="improve",
+            limit=10,
+            empty_message="No missing skills detected.",
+        )
 
     st.header("Recommended Career Path")
     st.info(state["career_path"])
@@ -306,35 +451,49 @@ def render_resume_tab(uploaded_file, state):
     if render_text_extraction_warning(state):
         return
 
-    st.metric("CV Score", f"{state['cv_score']}/100")
-    left_col, right_col = st.columns(2)
+    score = max(0, min(int(state["cv_score"]), 100))
+    st.markdown(
+        f"""
+        <section class="ats-score-card">
+            <p class="ats-score-label">ATS Score</p>
+            <div class="ats-score-value">{score}/100</div>
+            <div class="ats-score-bar"><div class="ats-score-fill" style="width: {score}%;"></div></div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with left_col:
-        st.subheader("Strengths")
-        if state["strengths"]:
-            for item in state["strengths"]:
-                st.success(item)
-        else:
-            st.write("No strengths detected.")
+    strengths_html = build_ats_item_list(state["strengths"], "success", "✓")
+    issues_html = build_ats_item_list(state["issues"], "issue", "⚠")
 
-    with right_col:
-        st.subheader("Issues")
-        if state["issues"]:
-            for item in state["issues"]:
-                st.warning(item)
-        else:
-            st.write("No major issues found.")
+    st.markdown(
+        f"""
+        <div class="ats-grid">
+            <section class="section-card">
+                <p class="section-title">Strengths</p>
+                {strengths_html}
+            </section>
+            <section class="section-card">
+                <p class="section-title">Issues</p>
+                {issues_html}
+            </section>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Suggestions")
-    if state["suggestions"]:
-        for item in state["suggestions"]:
-            st.info(item)
-    else:
-        st.success("Your CV looks good for a basic ATS check.")
+    suggestions_html = build_suggestion_list(state["suggestions"])
+    st.markdown(
+        f"""
+        <section class="section-card">
+            <p class="section-title">Suggestions</p>
+            {suggestions_html}
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Missing Skills")
-    if not render_skill_tiles(state["missing_skills"], status="info"):
-        st.success("No missing skills detected.")
+    render_missing_skills_card(state["missing_skills"], title="Missing Skills", limit=12)
 
 
 def render_learning_tab(uploaded_file, state):

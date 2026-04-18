@@ -9,7 +9,6 @@ def extract_text_from_uploaded_file(file):
         return ""
 
     filename = file.name.lower()
-
     if filename.endswith(".txt"):
         try:
             return file.read().decode("utf-8")
@@ -23,7 +22,8 @@ def extract_text_from_uploaded_file(file):
             return "\n".join(pages).strip()
         except Exception:
             return ""
-
+        
+        
     if filename.endswith(".docx"):
         try:
             doc = Document(BytesIO(file.read()))

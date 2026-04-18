@@ -3,11 +3,9 @@ def analyze_job_fit(cv_text, extracted_skills, job_description, vectorizer, skil
 
     if not job_text:
         return 0.0, [], [], []
-    
 
     job_skills = set(extract_skills_from_text(job_text, skill_vocab))
     cv_skills = set(extracted_skills)
-
     matched_skills = sorted(cv_skills & job_skills)
     missing_skills = sorted(job_skills - cv_skills)
 

@@ -1,5 +1,4 @@
 import ast
-
 import pandas as pd
 
 # Load the raw jobs data
