@@ -103,7 +103,8 @@ Future Improvements
 - Add model retraining automation and experiment tracking
 
 Demo and Slides
-- Demo video link: TODO
+- Live demo link: https://lawn-click-reminder-finite.trycloudflare.com
+- Demo video link: https://www.youtube.com/watch?v=ww8_mk3M4_4
 - Slides: docs/Job Search Strategy Presentation.pptx
 
 Author
